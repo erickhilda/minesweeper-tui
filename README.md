@@ -3,6 +3,7 @@
 ## Prerequisites
 
 - **Go installed:** Ensure you have Go installed on your system. You can download it from <https://go.dev/dl/>.
+- This project use go version 1.23.2, so make you update or install the same or version above
 - **Terminal:** You'll need a terminal or command prompt to execute the commands.
 
 ## Building the Project
