@@ -11,11 +11,31 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
 	unrevealed = "#"
 	mine       = "*"
+)
+
+var (
+	mineColor       = lipgloss.Color("#FF0000") // Red
+	oddColor        = lipgloss.Color("#0000FF") // Blue
+	evenColor       = lipgloss.Color("#008000") // Green
+	unrevealedColor = lipgloss.Color("#FFFFFF") // White
+	emptyColor      = lipgloss.Color("#FFFFFF")
+)
+
+// Define styles using the colors
+var (
+	mineStyle = lipgloss.NewStyle().
+			Foreground(mineColor).
+			Bold(true)
+	oddStyle        = lipgloss.NewStyle().Foreground(oddColor)
+	evenStyle       = lipgloss.NewStyle().Foreground(evenColor)
+	unrevealedStyle = lipgloss.NewStyle().Foreground(unrevealedColor)
+	emptyStyle      = lipgloss.NewStyle().Foreground(emptyColor)
 )
 
 type GameState struct {
@@ -266,12 +286,32 @@ func (g *GameState) View() string {
 		b.WriteString(fmt.Sprintf("%d| ", i))
 		for j := 0; j < g.gridSize; j++ {
 			if g.gameOver {
-				b.WriteString(fmt.Sprintf("%s ", g.board[i][j]))
+				cellString := g.board[i][j]
+				switch cellString {
+				case mine:
+					b.WriteString(mineStyle.Render(cellString) + " ")
+				case "1", "3", "5", "7":
+					b.WriteString(oddStyle.Render(cellString) + " ")
+				case "2", "4", "6", "8":
+					b.WriteString(evenStyle.Render(cellString) + " ")
+				default:
+					b.WriteString(emptyStyle.Render(cellString) + " ")
+				}
 			} else {
 				if g.revealed[i][j] {
-					b.WriteString(fmt.Sprintf("%s ", g.board[i][j]))
+					cellString := g.board[i][j]
+					switch cellString {
+					case " ":
+						b.WriteString(emptyStyle.Render(cellString) + " ")
+					case "1", "3", "5", "7":
+						b.WriteString(oddStyle.Render(cellString) + " ")
+					case "2", "4", "6", "8":
+						b.WriteString(evenStyle.Render(cellString) + " ")
+					default:
+						b.WriteString(emptyStyle.Render(cellString) + " ")
+					}
 				} else {
-					b.WriteString(fmt.Sprintf("%s ", unrevealed))
+					b.WriteString(unrevealedStyle.Render(unrevealed) + " ")
 				}
 			}
 		}
