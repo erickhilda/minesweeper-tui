@@ -320,18 +320,17 @@ func (g *GameState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (g *GameState) View() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Minesweeper %dx%d (%d mines) | Moves: %d\n", g.gridSize, g.gridSize, g.numMines, g.moveCount))
-	b.WriteString("   ")
-	for i := 0; i < g.gridSize; i++ {
-		b.WriteString(fmt.Sprintf("%d ", i))
+
+	// Top border
+	b.WriteString("+")
+	for i := 0; i < g.gridSize*2; i++ {
+		b.WriteString("-")
 	}
-	b.WriteString("\n")
-	b.WriteString(" --")
+	b.WriteString("+\n")
+
+	// Board rows with side borders
 	for i := 0; i < g.gridSize; i++ {
-		b.WriteString("--")
-	}
-	b.WriteString("\n")
-	for i := 0; i < g.gridSize; i++ {
-		b.WriteString(fmt.Sprintf("%d| ", i))
+		b.WriteString("|")
 		for j := 0; j < g.gridSize; j++ {
 			cellContent := ""
 			style := emptyStyle
@@ -382,8 +381,16 @@ func (g *GameState) View() string {
 
 			b.WriteString(style.Render(cellContent) + " ")
 		}
-		b.WriteString("\n")
+		b.WriteString("|\n")
 	}
+
+	// Bottom border
+	b.WriteString("+")
+	for i := 0; i < g.gridSize*2; i++ {
+		b.WriteString("-")
+	}
+	b.WriteString("+\n")
+
 	b.WriteString("\n")
 	b.WriteString(g.message + "\n")
 	if g.gameOver {
@@ -398,19 +405,45 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	var size, mines int
+	var choice int
 
-	fmt.Print("Enter grid size (n): ")
-	_, err := fmt.Fscanln(reader, &size)
-	if err != nil || size < 1 {
-		fmt.Println("Invalid grid size.")
+	fmt.Println("Select difficulty:")
+	fmt.Println("1. Easy   (8x8, 10 mines)")
+	fmt.Println("2. Medium (12x12, 20 mines)")
+	fmt.Println("3. Hard   (16x16, 40 mines)")
+	fmt.Println("4. Custom (define your own)")
+	fmt.Print("Enter choice (1-4): ")
+
+	_, err := fmt.Fscanln(reader, &choice)
+	if err != nil || choice < 1 || choice > 4 {
+		fmt.Println("Invalid choice. Please select 1, 2, 3, or 4.")
 		return
 	}
 
-	fmt.Printf("Enter number of mines (less than %d): ", size*size)
-	_, err = fmt.Fscanln(reader, &mines)
-	if err != nil || mines < 0 || mines >= size*size {
-		fmt.Printf("Invalid number of mines. Must be less than %d.\n", size*size)
-		return
+	switch choice {
+	case 1:
+		size = 8
+		mines = 10
+	case 2:
+		size = 12
+		mines = 20
+	case 3:
+		size = 16
+		mines = 40
+	case 4:
+		fmt.Print("Enter grid size (n): ")
+		_, err = fmt.Fscanln(reader, &size)
+		if err != nil || size < 1 {
+			fmt.Println("Invalid grid size.")
+			return
+		}
+
+		fmt.Printf("Enter number of mines (less than %d): ", size*size)
+		_, err = fmt.Fscanln(reader, &mines)
+		if err != nil || mines < 0 || mines >= size*size {
+			fmt.Printf("Invalid number of mines. Must be less than %d.\n", size*size)
+			return
+		}
 	}
 
 	game, err := NewGameState(size, mines)
