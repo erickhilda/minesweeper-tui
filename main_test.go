@@ -47,29 +47,19 @@ func TestInputValidation(t *testing.T) {
 		t.Fatalf("NewGameState failed: %v", err)
 	}
 
-	// simulate out-of-bounds input
-	_, _ = game.handleInput("3,0")
-	if !strings.Contains(game.message, "out of bounds") {
-		t.Errorf("Expected out of bounds message, got: %s", game.message)
-	}
-
-	// simulate invalid row/col value
-	_, _ = game.handleInput("a,b")
-	if !strings.Contains(game.message, "Invalid row or column value") {
-		t.Errorf("Expected invalid row/column message, got: %s", game.message)
-	}
-
-	// simulate a duplicate move
+	// Test revealing already revealed cell
 	game.revealCell(0, 0)
-	_, _ = game.handleInput("0,0")
+	game.cursorRow, game.cursorCol = 0, 0
+	game.revealAtCursor()
 	if !strings.Contains(game.message, "Cell already revealed") {
 		t.Errorf("Expected already revealed message, got: %s", game.message)
 	}
 
-	// simulate valid input
-	_, _ = game.handleInput("1,1")
-	if game.message == "Invalid input format. Use row,col (e.g., 0,1)" {
-		t.Errorf("Expected message to change after valid input, got %s", game.message)
+	// Test valid reveal
+	game.cursorRow, game.cursorCol = 1, 1
+	game.revealAtCursor()
+	if game.revealed[1][1] != true {
+		t.Errorf("Expected cell to be revealed")
 	}
 }
 
@@ -150,5 +140,114 @@ func TestCountAdjacentMines(t *testing.T) {
 	count = countAdjacentMines(board, 0, 1)
 	if count != 1 {
 		t.Errorf("Expected 1 adjacent mine, got %d", count)
+	}
+}
+
+// TestCursorMovement tests cursor movement and bounds checking.
+func TestCursorMovement(t *testing.T) {
+	size := 3
+	mines := 1
+	game, err := NewGameState(size, mines)
+	if err != nil {
+		t.Fatalf("NewGameState failed: %v", err)
+	}
+
+	// Test initial position
+	if game.cursorRow != 0 || game.cursorCol != 0 {
+		t.Errorf("Expected cursor at (0,0), got (%d,%d)", game.cursorRow, game.cursorCol)
+	}
+
+	// Test movement within bounds
+	game.moveCursor(1, 1)
+	if game.cursorRow != 1 || game.cursorCol != 1 {
+		t.Errorf("Expected cursor at (1,1), got (%d,%d)", game.cursorRow, game.cursorCol)
+	}
+
+	// Test bounds clamping (top-left)
+	game.cursorRow, game.cursorCol = 0, 0
+	game.moveCursor(-1, -1)
+	if game.cursorRow != 0 || game.cursorCol != 0 {
+		t.Errorf("Cursor went out of bounds: (%d,%d)", game.cursorRow, game.cursorCol)
+	}
+
+	// Test bounds clamping (bottom-right)
+	game.cursorRow, game.cursorCol = size-1, size-1
+	game.moveCursor(1, 1)
+	if game.cursorRow != size-1 || game.cursorCol != size-1 {
+		t.Errorf("Cursor went out of bounds: (%d,%d)", game.cursorRow, game.cursorCol)
+	}
+}
+
+// TestFlagToggle tests flagging and unflagging cells.
+func TestFlagToggle(t *testing.T) {
+	size := 3
+	mines := 1
+	game, err := NewGameState(size, mines)
+	if err != nil {
+		t.Fatalf("NewGameState failed: %v", err)
+	}
+
+	// Flag a cell
+	game.toggleFlag()
+	if !game.flagged[0][0] {
+		t.Errorf("Expected cell (0,0) to be flagged")
+	}
+
+	// Unflag the cell
+	game.toggleFlag()
+	if game.flagged[0][0] {
+		t.Errorf("Expected cell (0,0) to be unflagged")
+	}
+
+	// Cannot flag revealed cell
+	game.revealed[0][0] = true
+	game.toggleFlag()
+	if game.flagged[0][0] {
+		t.Errorf("Should not be able to flag revealed cell")
+	}
+	if !strings.Contains(game.message, "Cannot flag revealed cell") {
+		t.Errorf("Expected message about flagged cell, got: %s", game.message)
+	}
+}
+
+// TestRevealFlaggedCell tests that flagged cells cannot be revealed.
+func TestRevealFlaggedCell(t *testing.T) {
+	size := 3
+	mines := 1
+	game, err := NewGameState(size, mines)
+	if err != nil {
+		t.Fatalf("NewGameState failed: %v", err)
+	}
+
+	// Flag cell at cursor
+	game.flagged[0][0] = true
+
+	// Try to reveal flagged cell
+	game.revealAtCursor()
+	if game.revealed[0][0] {
+		t.Errorf("Flagged cell should not be revealed")
+	}
+	if !strings.Contains(game.message, "Cannot reveal flagged cell") {
+		t.Errorf("Expected message about flagged cell, got: %s", game.message)
+	}
+}
+
+// TestFlaggedCellsNotAutoRevealed tests that auto-reveal respects flags.
+func TestFlaggedCellsNotAutoRevealed(t *testing.T) {
+	size := 3
+	mines := 0
+	game, err := NewGameState(size, mines)
+	if err != nil {
+		t.Fatalf("NewGameState failed: %v", err)
+	}
+
+	// Flag a cell
+	game.flagged[1][1] = true
+
+	// Reveal adjacent empty cell (should auto-reveal neighbors except flagged)
+	game.revealCell(0, 0)
+
+	if game.revealed[1][1] {
+		t.Errorf("Flagged cell should not be auto-revealed")
 	}
 }

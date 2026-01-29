@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,6 +16,7 @@ import (
 const (
 	unrevealed = "#"
 	mine       = "*"
+	flag       = "F"
 )
 
 var (
@@ -25,6 +25,8 @@ var (
 	evenColor       = lipgloss.Color("#008000") // Green
 	unrevealedColor = lipgloss.Color("#FFFFFF") // White
 	emptyColor      = lipgloss.Color("#FFFFFF")
+	flagColor       = lipgloss.Color("#FFFF00") // Yellow
+	cursorBgColor   = lipgloss.Color("#333333") // Gray
 )
 
 // Define styles using the colors
@@ -36,6 +38,7 @@ var (
 	evenStyle       = lipgloss.NewStyle().Foreground(evenColor)
 	unrevealedStyle = lipgloss.NewStyle().Foreground(unrevealedColor)
 	emptyStyle      = lipgloss.NewStyle().Foreground(emptyColor)
+	flagStyle       = lipgloss.NewStyle().Foreground(flagColor).Bold(true)
 )
 
 type GameState struct {
@@ -43,9 +46,11 @@ type GameState struct {
 	numMines  int
 	board     [][]string
 	revealed  [][]bool
+	flagged   [][]bool
 	gameOver  bool
 	win       bool
-	input     textinput.Model
+	cursorRow int
+	cursorCol int
 	message   string
 	moveCount int
 }
@@ -59,13 +64,16 @@ func NewGameState(size, mines int) (*GameState, error) {
 
 	board := make([][]string, size)
 	revealed := make([][]bool, size)
+	flagged := make([][]bool, size)
 	// generate the board
 	for i := 0; i < size; i++ {
 		board[i] = make([]string, size)
 		revealed[i] = make([]bool, size)
+		flagged[i] = make([]bool, size)
 		for j := 0; j < size; j++ {
 			board[i][j] = unrevealed
 			revealed[i][j] = false
+			flagged[i][j] = false
 		}
 	}
 
@@ -95,19 +103,17 @@ func NewGameState(size, mines int) (*GameState, error) {
 		}
 	}
 
-	ti := textinput.New()
-	ti.Placeholder = "row,col (e.g., 0,1)"
-	ti.Focus()
-
 	return &GameState{
 		gridSize:  size,
 		numMines:  mines,
 		board:     board,
 		revealed:  revealed,
+		flagged:   flagged,
 		gameOver:  false,
 		win:       false,
-		input:     ti,
-		message:   "Enter your move:",
+		cursorRow: 0,
+		cursorCol: 0,
+		message:   "Use arrow keys to move, Space to reveal, F to flag, ? for help",
 		moveCount: 0,
 	}, nil
 }
@@ -173,8 +179,8 @@ func (g *GameState) revealAdjacentEmpty(row, col int) {
 		for j := -1; j <= 1; j++ {
 			// get the real coordinate of a neighbor cell
 			r, c := row+i, col+j
-			// check bounds, if the cell is not revealed and is not a mine
-			if r >= 0 && r < rows && c >= 0 && c < cols && !g.revealed[r][c] && g.board[r][c] != mine {
+			// check bounds, if the cell is not revealed, not flagged, and is not a mine
+			if r >= 0 && r < rows && c >= 0 && c < cols && !g.revealed[r][c] && !g.flagged[r][c] && g.board[r][c] != mine {
 				g.revealed[r][c] = true
 				if g.board[r][c] == " " {
 					g.revealAdjacentEmpty(r, c)
@@ -201,16 +207,76 @@ func (g *GameState) checkWin() bool {
 	return revealedNonMines == nonMineCells
 }
 
+// moveCursor moves the cursor by the given delta, with bounds checking.
+func (g *GameState) moveCursor(deltaRow, deltaCol int) {
+	newRow := g.cursorRow + deltaRow
+	newCol := g.cursorCol + deltaCol
+
+	// Clamp to grid bounds
+	if newRow >= 0 && newRow < g.gridSize {
+		g.cursorRow = newRow
+	}
+	if newCol >= 0 && newCol < g.gridSize {
+		g.cursorCol = newCol
+	}
+}
+
+// revealAtCursor reveals the cell at the current cursor position.
+func (g *GameState) revealAtCursor() {
+	row, col := g.cursorRow, g.cursorCol
+
+	if g.revealed[row][col] {
+		g.message = "Cell already revealed"
+		return
+	}
+
+	if g.flagged[row][col] {
+		g.message = "Cannot reveal flagged cell. Press F to unflag first."
+		return
+	}
+
+	g.revealCell(row, col)
+
+	if !g.gameOver {
+		g.message = "Use arrow keys to move, Space to reveal, F to flag, ? for help"
+	}
+}
+
+// toggleFlag toggles the flag state at the current cursor position.
+func (g *GameState) toggleFlag() {
+	row, col := g.cursorRow, g.cursorCol
+
+	if g.revealed[row][col] {
+		g.message = "Cannot flag revealed cell"
+		return
+	}
+
+	g.flagged[row][col] = !g.flagged[row][col]
+
+	if g.flagged[row][col] {
+		g.message = "Cell flagged"
+	} else {
+		g.message = "Flag removed"
+	}
+}
+
+// showHelp displays keyboard shortcuts.
+func (g *GameState) showHelp() {
+	g.message = "Controls: ↑↓←→/hjkl=move | Space/Enter=reveal | F=flag | ?=help | Q/Ctrl+C=quit"
+}
+
 // Init initializes the Bubble Tea model.
 func (g *GameState) Init() tea.Cmd {
-	return textinput.Blink
+	return nil
 }
 
 // Update handles UI updates based on events.
 func (g *GameState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if g.gameOver {
-		if k, ok := msg.(tea.KeyMsg); ok {
-			if k.Type == tea.KeyCtrlC || k.Type == tea.KeyEnter {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "ctrl+c", "q":
 				return g, tea.Quit
 			}
 		}
@@ -219,59 +285,41 @@ func (g *GameState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		switch msg.String() {
+		case "ctrl+c", "esc", "q":
 			return g, tea.Quit
-		case tea.KeyEnter:
-			input := g.input.Value()
-			g.input.Reset()
-			return g.handleInput(input)
+
+		// Cursor movement (arrow keys)
+		case "up", "k":
+			g.moveCursor(-1, 0)
+		case "down", "j":
+			g.moveCursor(1, 0)
+		case "left", "h":
+			g.moveCursor(0, -1)
+		case "right", "l":
+			g.moveCursor(0, 1)
+
+		// Cell reveal
+		case " ", "enter":
+			g.revealAtCursor()
+
+		// Toggle flag
+		case "f":
+			g.toggleFlag()
+
+		// Help
+		case "?":
+			g.showHelp()
 		}
 	}
 
-	var cmd tea.Cmd
-	g.input, cmd = g.input.Update(msg)
-	return g, cmd
-}
-
-// handleInput processes player input.
-func (g *GameState) handleInput(input string) (*GameState, tea.Cmd) {
-	parts := strings.Split(input, ",")
-	if len(parts) != 2 {
-		g.message = "Invalid input format. Use row,col (e.g., 0,1)"
-		return g, nil
-	}
-
-	rowStr := strings.TrimSpace(parts[0])
-	colStr := strings.TrimSpace(parts[1])
-
-	row, errRow := strconv.Atoi(rowStr)
-	col, errCol := strconv.Atoi(colStr)
-
-	if errRow != nil || errCol != nil {
-		g.message = "Invalid row or column value. Must be numbers."
-		return g, nil
-	}
-
-	if row < 0 || row >= g.gridSize || col < 0 || col >= g.gridSize {
-		g.message = fmt.Sprintf("Coordinates out of bounds (0-%d).", g.gridSize-1)
-		return g, nil
-	}
-
-	if g.revealed[row][col] {
-		g.message = "Cell already revealed. Choose another."
-		return g, nil
-	}
-
-	g.revealCell(row, col)
-	g.message = "Enter your move:"
 	return g, nil
 }
 
 // View renders the current game state.
 func (g *GameState) View() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Minesweeper %dx%d (%d mines)\n", g.gridSize, g.gridSize, g.numMines))
+	b.WriteString(fmt.Sprintf("Minesweeper %dx%d (%d mines) | Moves: %d\n", g.gridSize, g.gridSize, g.numMines, g.moveCount))
 	b.WriteString("   ")
 	for i := 0; i < g.gridSize; i++ {
 		b.WriteString(fmt.Sprintf("%d ", i))
@@ -285,44 +333,63 @@ func (g *GameState) View() string {
 	for i := 0; i < g.gridSize; i++ {
 		b.WriteString(fmt.Sprintf("%d| ", i))
 		for j := 0; j < g.gridSize; j++ {
+			cellContent := ""
+			style := emptyStyle
+			isCursor := (i == g.cursorRow && j == g.cursorCol)
+
+			// Determine cell content and style
 			if g.gameOver {
-				cellString := g.board[i][j]
-				switch cellString {
+				// Show entire board on game over
+				cellContent = g.board[i][j]
+				switch cellContent {
 				case mine:
-					b.WriteString(mineStyle.Render(cellString) + " ")
+					style = mineStyle
 				case "1", "3", "5", "7":
-					b.WriteString(oddStyle.Render(cellString) + " ")
+					style = oddStyle
 				case "2", "4", "6", "8":
-					b.WriteString(evenStyle.Render(cellString) + " ")
+					style = evenStyle
 				default:
-					b.WriteString(emptyStyle.Render(cellString) + " ")
+					style = emptyStyle
 				}
 			} else {
-				if g.revealed[i][j] {
-					cellString := g.board[i][j]
-					switch cellString {
+				// During gameplay
+				if g.flagged[i][j] {
+					cellContent = flag
+					style = flagStyle
+				} else if g.revealed[i][j] {
+					cellContent = g.board[i][j]
+					switch cellContent {
 					case " ":
-						b.WriteString(emptyStyle.Render(cellString) + " ")
+						style = emptyStyle
 					case "1", "3", "5", "7":
-						b.WriteString(oddStyle.Render(cellString) + " ")
+						style = oddStyle
 					case "2", "4", "6", "8":
-						b.WriteString(evenStyle.Render(cellString) + " ")
+						style = evenStyle
 					default:
-						b.WriteString(emptyStyle.Render(cellString) + " ")
+						style = emptyStyle
 					}
 				} else {
-					b.WriteString(unrevealedStyle.Render(unrevealed) + " ")
+					cellContent = unrevealed
+					style = unrevealedStyle
 				}
 			}
+
+			// Apply cursor highlighting
+			if isCursor && !g.gameOver {
+				// Combine cursor style with existing style
+				style = style.Copy().Background(cursorBgColor).Reverse(true)
+			}
+
+			b.WriteString(style.Render(cellContent) + " ")
 		}
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(g.message + "\n")
-	if !g.gameOver {
-		b.WriteString(g.input.View())
+	if g.gameOver {
+		b.WriteString("Press Q/Ctrl+C to quit.\n")
 	} else {
-		b.WriteString("Press Ctrl+C or Enter to quit.\n")
+		b.WriteString("Press ? for help\n")
 	}
 	return b.String()
 }
